@@ -36,11 +36,31 @@ def load_data():
         "buttons": [],
         "forward_link": None
     }
+
     if not os.path.exists(DATA_FILE):
         return default
+
     try:
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+
+            # 🔥 AUTO FIX DATA LAMA
+            if 'grup' in data:
+                data['groups'] = data.pop('grup')
+
+            if 'aktif' in data:
+                data['is_active'] = data.pop('aktif')
+
+            if 'media_id' in data:
+                data['media_message_id'] = data.pop('media_id')
+
+            # pastikan semua key ada
+            for k in default:
+                if k not in data:
+                    data[k] = default[k]
+
+            return data
+
     except:
         return default
 
@@ -79,11 +99,13 @@ async def send_forward(group):
         parts = link.split('/')
         chat = parts[-2]
         msg_id = int(parts[-1])
+
         msg = await client.get_messages(chat, ids=msg_id)
         if msg:
             await client.forward_messages(group, msg)
+
     except Exception as e:
-        logging.error(e)
+        logging.error(f"Forward error {group}: {e}")
 
 async def send_custom(group):
     try:
@@ -91,6 +113,7 @@ async def send_custom(group):
 
         if bot_data['media_message_id']:
             msg = await client.get_messages("me", ids=bot_data['media_message_id'])
+
             if msg:
                 await client.send_file(
                     group,
@@ -98,11 +121,16 @@ async def send_custom(group):
                     caption=bot_data['caption'] or msg.message or "",
                     buttons=buttons
                 )
+
         elif bot_data['caption']:
-            await client.send_message(group, bot_data['caption'], buttons=buttons)
+            await client.send_message(
+                group,
+                bot_data['caption'],
+                buttons=buttons
+            )
 
     except Exception as e:
-        logging.error(e)
+        logging.error(f"Custom error {group}: {e}")
 
 # ================= BROADCAST =================
 async def broadcast_loop():
@@ -117,15 +145,20 @@ async def broadcast_loop():
                 if not bot_data['is_active']:
                     break
 
-                if bot_data['forward_link']:
-                    await send_forward(g)
-                else:
-                    await send_custom(g)
+                try:
+                    if bot_data['forward_link']:
+                        await send_forward(g)
+                    else:
+                        await send_custom(g)
 
-                await asyncio.sleep(random.randint(150, 210))  # ±3 menit
+                except Exception as e:
+                    logging.error(f"Send fail {g}: {e}")
+
+                # 🔥 DELAY AMAN
+                await asyncio.sleep(random.randint(150, 210))
 
             if bot_data['is_active']:
-                await asyncio.sleep(1800)  # 30 menit
+                await asyncio.sleep(1800)
 
     broadcast_task = None
 
@@ -136,26 +169,27 @@ async def help_cmd(event):
     await event.respond("""
 📢 *Panduan Bot Broadcast*
 
-* /on - Mulai broadcast
-* /off - Stop broadcast
-* /status - Cek status
-* /help - Panduan
+/on - Mulai
+/off - Stop
+/status - Status
+/help - Bantuan
 
 📦 Grup:
-* /addgroup @group
-* /delgroup @group
-* /listgroup
+/addgroup @group
+/delgroup @group
+/listgroup
 
 📝 Konten:
-* /setcaption teks
-* /setmedia (reply media)
-* /setbutton Text|URL||Text|URL
-* /forward link_post
+/setcaption teks
+/setmedia (reply)
+/setbutton Text|URL||Text|URL
+/forward link_post
 """)
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/on$'))
 async def start(event):
     global broadcast_task
+
     if bot_data['is_active']:
         return await event.respond("Sudah ON")
 
@@ -175,25 +209,37 @@ async def stop(event):
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/status$'))
 async def status(event):
-    await event.respond(f"""
-Status: {'ON' if bot_data['is_active'] else 'OFF'}
-Grup: {len(bot_data['groups'])}
-Mode: {'FORWARD' if bot_data['forward_link'] else 'CUSTOM'}
-""")
+    await event.respond(
+        f"Status: {'ON' if bot_data['is_active'] else 'OFF'}\n"
+        f"Grup: {len(bot_data['groups'])}\n"
+        f"Mode: {'FORWARD' if bot_data['forward_link'] else 'CUSTOM'}"
+    )
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
 async def addgroup(event):
-    g = event.raw_text.split(' ')[1]
+    parts = event.raw_text.split()
+    if len(parts) < 2:
+        return await event.respond("Format salah")
+
+    g = parts[1]
+
     if g not in bot_data['groups']:
         bot_data['groups'].append(g)
+
     save_data(bot_data)
     await event.respond("OK")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/delgroup'))
 async def delgroup(event):
-    g = event.raw_text.split(' ')[1]
+    parts = event.raw_text.split()
+    if len(parts) < 2:
+        return await event.respond("Format salah")
+
+    g = parts[1]
+
     if g in bot_data['groups']:
         bot_data['groups'].remove(g)
+
     save_data(bot_data)
     await event.respond("OK")
 
@@ -204,8 +250,10 @@ async def listgroup(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption'))
 async def setcaption(event):
     text = event.raw_text.replace("/setcaption", "").strip()
+
     bot_data['caption'] = text
     bot_data['forward_link'] = None
+
     save_data(bot_data)
     await event.respond("Caption OK")
 
@@ -215,11 +263,12 @@ async def setmedia(event):
         return await event.respond("Reply media")
 
     msg = await event.get_reply_message()
+
     bot_data['media_message_id'] = msg.id
     bot_data['caption'] = msg.message or ""
     bot_data['forward_link'] = None
-    save_data(bot_data)
 
+    save_data(bot_data)
     await event.respond("Media OK")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setbutton'))
@@ -227,9 +276,12 @@ async def setbutton(event):
     raw = event.raw_text.replace("/setbutton", "").strip()
     buttons = []
 
-    for b in raw.split("||"):
-        t, u = b.split("|")
-        buttons.append({"text": t.strip(), "url": u.strip()})
+    try:
+        for b in raw.split("||"):
+            t, u = b.split("|")
+            buttons.append({"text": t.strip(), "url": u.strip()})
+    except:
+        return await event.respond("Format salah")
 
     bot_data['buttons'] = buttons
     save_data(bot_data)
@@ -238,14 +290,19 @@ async def setbutton(event):
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/forward'))
 async def forward(event):
-    link = event.raw_text.split(' ')[1]
+    parts = event.raw_text.split()
+    if len(parts) < 2:
+        return await event.respond("Masukkan link")
+
+    link = parts[1]
+
     bot_data['forward_link'] = link
     bot_data['caption'] = ""
     bot_data['media_message_id'] = None
     bot_data['buttons'] = []
-    save_data(bot_data)
 
-    await event.respond("Forward Mode ON")
+    save_data(bot_data)
+    await event.respond("Forward ON")
 
 # ================= RUN =================
 async def main():
@@ -254,7 +311,7 @@ async def main():
     await client.start()
     logging.info("Bot Connected")
 
-    if bot_data['is_active']:
+    if bot_data.get('is_active'):
         if not broadcast_task or broadcast_task.done():
             broadcast_task = asyncio.create_task(broadcast_loop())
 
