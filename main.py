@@ -20,7 +20,7 @@ API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 
 if not API_ID or not API_HASH or not SESSION_STRING:
-    raise RuntimeError("ENV belum lengkap (API_ID / API_HASH / SESSION_STRING)")
+    raise RuntimeError("ENV belum lengkap")
 
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
@@ -138,13 +138,10 @@ async def broadcast_loop():
                 if not bot_data['is_active']:
                     break
 
-                try:
-                    if bot_data['forward_link']:
-                        await send_forward(g)
-                    else:
-                        await send_custom(g)
-                except Exception as e:
-                    logging.error(f"Send fail {g}: {e}")
+                if bot_data['forward_link']:
+                    await send_forward(g)
+                else:
+                    await send_custom(g)
 
                 await asyncio.sleep(random.randint(150, 210))
 
@@ -184,7 +181,7 @@ async def status(event):
         f"Mode: {'FORWARD' if bot_data['forward_link'] else 'CUSTOM'}"
     )
 
-# 🔥 MULTI ADD GROUP
+# MULTI ADD
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
 async def addgroup(event):
     lines = event.raw_text.split('\n')[1:]
@@ -221,15 +218,19 @@ async def delgroup(event):
 async def listgroup(event):
     await event.respond("\n".join(bot_data['groups']) or "Kosong")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption'))
+# 🔥 FIX: CAPTION HARUS REPLY
+@client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption$'))
 async def setcaption(event):
-    text = event.raw_text.replace("/setcaption", "").strip()
+    if not event.is_reply:
+        return await event.respond("Reply pesan untuk ambil caption")
 
-    bot_data['caption'] = text
+    msg = await event.get_reply_message()
+
+    bot_data['caption'] = msg.message or ""
     bot_data['forward_link'] = None
 
     save_data(bot_data)
-    await event.respond("Caption OK")
+    await event.respond("Caption OK (reply)")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setmedia$'))
 async def setmedia(event):
