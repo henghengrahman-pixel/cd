@@ -44,7 +44,6 @@ def load_data():
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-            # auto fix data lama
             if 'grup' in data:
                 data['groups'] = data.pop('grup')
             if 'aktif' in data:
@@ -99,8 +98,11 @@ async def send_forward(group):
         msg = await client.get_messages(chat, ids=msg_id)
         if msg:
             await client.forward_messages(group, msg)
+
+        await client.send_message("me", f"✅ {group}")
+
     except Exception as e:
-        logging.error(f"Forward fail {group}: {e}")
+        await client.send_message("me", f"❌ {group}\n{e}")
 
 async def send_custom(group):
     try:
@@ -118,8 +120,10 @@ async def send_custom(group):
         elif bot_data['caption']:
             await client.send_message(group, bot_data['caption'], buttons=buttons)
 
+        await client.send_message("me", f"✅ {group}")
+
     except Exception as e:
-        logging.error(f"Custom fail {group}: {e}")
+        await client.send_message("me", f"❌ {group}\n{e}")
 
 # ================= BROADCAST =================
 async def broadcast_loop():
@@ -180,19 +184,24 @@ async def status(event):
         f"Mode: {'FORWARD' if bot_data['forward_link'] else 'CUSTOM'}"
     )
 
+# 🔥 MULTI ADD GROUP
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
 async def addgroup(event):
-    parts = event.raw_text.split()
-    if len(parts) < 2:
-        return await event.respond("Format salah")
+    lines = event.raw_text.split('\n')[1:]
 
-    g = parts[1].lower()
-
-    if g not in bot_data['groups']:
-        bot_data['groups'].append(g)
+    added = []
+    for g in lines:
+        g = g.strip().lower()
+        if g.startswith("@") and g not in bot_data['groups']:
+            bot_data['groups'].append(g)
+            added.append(g)
 
     save_data(bot_data)
-    await event.respond("OK")
+
+    if added:
+        await event.respond("✅ Ditambahkan:\n" + "\n".join(added))
+    else:
+        await event.respond("⚠️ Tidak ada grup baru")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/delgroup'))
 async def delgroup(event):
