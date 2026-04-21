@@ -4,7 +4,6 @@ import os
 import logging
 import random
 from telethon import TelegramClient, events, Button
-from telethon.sessions import StringSession
 from flask import Flask
 import threading
 
@@ -14,18 +13,19 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# ================= ENV =================
-API_ID = int(os.environ.get("API_ID", "0"))
-API_HASH = os.environ.get("API_HASH")
-SESSION_STRING = os.environ.get("SESSION_STRING")
+# ================= TELEGRAM =================
+API_ID = 29931874
+API_HASH = '79a1562d9f9381a162a004fe17539afe'
 
-if not API_ID or not API_HASH or not SESSION_STRING:
-    raise RuntimeError("ENV belum lengkap")
+SESSION_FILE = "userbot_broadcast_session.session"
 
-client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+if not os.path.exists(SESSION_FILE):
+    raise RuntimeError("File session belum ada")
+
+client = TelegramClient('userbot_broadcast_session', API_ID, API_HASH)
 
 # ================= DATA =================
-DATA_FILE = 'data.json'
+DATA_FILE = 'bot_data.json'
 
 def load_data():
     default = {
@@ -44,23 +44,19 @@ def load_data():
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
             data = json.load(f)
 
-            # 🔥 AUTO FIX DATA LAMA
+            # auto fix data lama
             if 'grup' in data:
                 data['groups'] = data.pop('grup')
-
             if 'aktif' in data:
                 data['is_active'] = data.pop('aktif')
-
             if 'media_id' in data:
                 data['media_message_id'] = data.pop('media_id')
 
-            # pastikan semua key ada
             for k in default:
                 if k not in data:
                     data[k] = default[k]
 
             return data
-
     except:
         return default
 
@@ -88,10 +84,10 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # ================= UTIL =================
 def build_buttons():
-    btns = []
+    rows = []
     for b in bot_data['buttons']:
-        btns.append([Button.url(b['text'], b['url'])])
-    return btns if btns else None
+        rows.append([Button.url(b['text'], b['url'])])
+    return rows if rows else None
 
 async def send_forward(group):
     try:
@@ -103,9 +99,8 @@ async def send_forward(group):
         msg = await client.get_messages(chat, ids=msg_id)
         if msg:
             await client.forward_messages(group, msg)
-
     except Exception as e:
-        logging.error(f"Forward error {group}: {e}")
+        logging.error(f"Forward fail {group}: {e}")
 
 async def send_custom(group):
     try:
@@ -113,7 +108,6 @@ async def send_custom(group):
 
         if bot_data['media_message_id']:
             msg = await client.get_messages("me", ids=bot_data['media_message_id'])
-
             if msg:
                 await client.send_file(
                     group,
@@ -121,16 +115,11 @@ async def send_custom(group):
                     caption=bot_data['caption'] or msg.message or "",
                     buttons=buttons
                 )
-
         elif bot_data['caption']:
-            await client.send_message(
-                group,
-                bot_data['caption'],
-                buttons=buttons
-            )
+            await client.send_message(group, bot_data['caption'], buttons=buttons)
 
     except Exception as e:
-        logging.error(f"Custom error {group}: {e}")
+        logging.error(f"Custom fail {group}: {e}")
 
 # ================= BROADCAST =================
 async def broadcast_loop():
@@ -145,46 +134,19 @@ async def broadcast_loop():
                 if not bot_data['is_active']:
                     break
 
-                try:
-                    if bot_data['forward_link']:
-                        await send_forward(g)
-                    else:
-                        await send_custom(g)
+                if bot_data['forward_link']:
+                    await send_forward(g)
+                else:
+                    await send_custom(g)
 
-                except Exception as e:
-                    logging.error(f"Send fail {g}: {e}")
-
-                # 🔥 DELAY AMAN
-                await asyncio.sleep(random.randint(150, 210))
+                await asyncio.sleep(random.randint(150, 210))  # 3 menit
 
             if bot_data['is_active']:
-                await asyncio.sleep(1800)
+                await asyncio.sleep(1800)  # 30 menit
 
     broadcast_task = None
 
 # ================= COMMAND =================
-
-@client.on(events.NewMessage(outgoing=True, pattern=r'^/help$'))
-async def help_cmd(event):
-    await event.respond("""
-📢 *Panduan Bot Broadcast*
-
-/on - Mulai
-/off - Stop
-/status - Status
-/help - Bantuan
-
-📦 Grup:
-/addgroup @group
-/delgroup @group
-/listgroup
-
-📝 Konten:
-/setcaption teks
-/setmedia (reply)
-/setbutton Text|URL||Text|URL
-/forward link_post
-""")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/on$'))
 async def start(event):
@@ -221,7 +183,7 @@ async def addgroup(event):
     if len(parts) < 2:
         return await event.respond("Format salah")
 
-    g = parts[1]
+    g = parts[1].lower()
 
     if g not in bot_data['groups']:
         bot_data['groups'].append(g)
@@ -235,7 +197,7 @@ async def delgroup(event):
     if len(parts) < 2:
         return await event.respond("Format salah")
 
-    g = parts[1]
+    g = parts[1].lower()
 
     if g in bot_data['groups']:
         bot_data['groups'].remove(g)
@@ -294,9 +256,7 @@ async def forward(event):
     if len(parts) < 2:
         return await event.respond("Masukkan link")
 
-    link = parts[1]
-
-    bot_data['forward_link'] = link
+    bot_data['forward_link'] = parts[1]
     bot_data['caption'] = ""
     bot_data['media_message_id'] = None
     bot_data['buttons'] = []
