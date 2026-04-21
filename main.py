@@ -2,27 +2,22 @@ import asyncio
 import json
 import os
 import logging
-from telethon import TelegramClient, events, Button
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from telethon.tl.types import MessageMediaPhoto, MessageMediaDocument
 from flask import Flask
 import threading
 
 # --- Logging ---
 logging.basicConfig(format='[%(levelname) 5s/%(asctime)s] %(name)s: %(message)s', level=logging.WARNING)
 
-# --- ENV (WAJIB) ---
+# --- ENV ---
 API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 
-if not API_ID or not API_HASH or not SESSION_STRING:
-    raise RuntimeError("❌ ENV belum lengkap: API_ID / API_HASH / SESSION_STRING")
-
-# --- Client ---
 client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
-# --- Data File ---
+# --- Data ---
 DATA_FILE = 'bot_data.json'
 
 def load_data():
@@ -31,22 +26,10 @@ def load_data():
             "caption": "",
             "groups": [],
             "is_active": False,
-            "media_message_id": None,
-            "buttons": [],
-            "forward_link": None
+            "media_message_id": None
         }
-    try:
-        with open(DATA_FILE, 'r') as f:
-            return json.load(f)
-    except:
-        return {
-            "caption": "",
-            "groups": [],
-            "is_active": False,
-            "media_message_id": None,
-            "buttons": [],
-            "forward_link": None
-        }
+    with open(DATA_FILE, 'r') as f:
+        return json.load(f)
 
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
@@ -54,94 +37,124 @@ def save_data(data):
 
 bot_data = load_data()
 
-# --- Flask App ---
+# --- Flask ---
 app = Flask(__name__)
-
 @app.route('/')
 def index():
-    return "✅ Bot aktif dan online!"
+    return "✅ Bot aktif"
 
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 threading.Thread(target=run_flask, daemon=True).start()
 
-# --- Broadcast Loop ---
+# --- BROADCAST ---
 async def broadcast_loop():
     while bot_data['is_active']:
         for group in bot_data['groups']:
-            if not bot_data['is_active']:
-                break
-
             try:
-                if bot_data['caption']:
+                if bot_data['media_message_id']:
+                    msg = await client.get_messages("me", ids=bot_data['media_message_id'])
+
+                    await client.send_file(
+                        group,
+                        msg.media,
+                        caption=bot_data['caption']
+                    )
+
+                    await client.send_message("me", f"✅ Media ke {group} sukses.")
+
+                elif bot_data['caption']:
                     await client.send_message(group, bot_data['caption'])
-                    await client.send_message("me", f"✅ Broadcast ke {group}")
+                    await client.send_message("me", f"✅ Text ke {group} sukses.")
+
             except Exception as e:
                 await client.send_message("me", f"❌ Gagal kirim ke {group}: {e}")
 
             await asyncio.sleep(180)
 
-        if bot_data['is_active']:
-            await asyncio.sleep(1800)
+        await asyncio.sleep(1800)
 
-# --- Commands (TIDAK DIUBAH LOGIC NYA) ---
+# --- COMMANDS ---
+
+# ON
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/on$'))
-async def start_broadcast(event):
-    if not bot_data['is_active']:
-        bot_data['is_active'] = True
-        save_data(bot_data)
-        await event.respond("✅ Broadcast dimulai.")
-        asyncio.create_task(broadcast_loop())
-    else:
-        await event.respond("⚠️ Broadcast sudah berjalan.")
+async def start(event):
+    bot_data['is_active'] = True
+    save_data(bot_data)
+    await event.respond("✅ Broadcast ON")
+    asyncio.create_task(broadcast_loop())
 
+# OFF
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/off$'))
-async def stop_broadcast(event):
+async def stop(event):
     bot_data['is_active'] = False
     save_data(bot_data)
-    await event.respond("⛔ Broadcast dihentikan.")
+    await event.respond("⛔ Broadcast OFF")
 
-@client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup (@\w+)$'))
-async def add_group(event):
-    group = event.pattern_match.group(1).lower()
+# ADD GROUP MULTI
+@client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
+async def addgroup(event):
+    text = event.raw_text.split('\n')[1:]
 
-    if group not in bot_data['groups']:
-        bot_data['groups'].append(group)
-        save_data(bot_data)
-        await event.respond(f"✅ Grup {group} ditambahkan.")
-    else:
-        await event.respond("⚠️ Grup sudah ada.")
+    added = []
+    for g in text:
+        g = g.strip()
+        if g.startswith("@") and g not in bot_data['groups']:
+            bot_data['groups'].append(g)
+            added.append(g)
 
+    save_data(bot_data)
+
+    await event.respond(f"✅ Grup ditambahkan:\n{', '.join(added)}")
+
+# LIST
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/listgroup$'))
-async def list_group(event):
+async def listgroup(event):
     if not bot_data['groups']:
-        await event.respond("📭 Belum ada grup yang ditambahkan.")
+        await event.respond("Kosong")
     else:
-        daftar = "\n".join(bot_data['groups'])
-        await event.respond(f"📋 Grup terdaftar:\n{daftar}")
+        await event.respond("\n".join(bot_data['groups']))
 
+# STATUS
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/status$'))
 async def status(event):
-    status = "✅ AKTIF" if bot_data['is_active'] else "❌ NONAKTIF"
-    await event.respond(f"📡 Broadcast: {status}\n📦 Grup: {len(bot_data['groups'])}")
+    await event.respond(f"Status: {'ON' if bot_data['is_active'] else 'OFF'}\nTotal Grup: {len(bot_data['groups'])}")
 
-# --- Run Bot ---
+# SET MEDIA (REPLY)
+@client.on(events.NewMessage(outgoing=True, pattern=r'^/setmedia$'))
+async def setmedia(event):
+    if not event.is_reply:
+        return await event.respond("Reply media dulu")
+
+    msg = await event.get_reply_message()
+
+    if not msg.media:
+        return await event.respond("Bukan media")
+
+    bot_data['media_message_id'] = msg.id
+    bot_data['caption'] = msg.text or ""
+    save_data(bot_data)
+
+    await event.respond("✅ Media disimpan")
+
+# SET CAPTION
+@client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption'))
+async def setcaption(event):
+    text = event.raw_text.replace("/setcaption", "").strip()
+    bot_data['caption'] = text
+    save_data(bot_data)
+
+    await event.respond("✅ Caption disimpan")
+
+# --- RUN ---
 async def main():
     await client.start()
-    print("✅ Bot Connected.")
-
-    # DEBUG USER LOGIN
-    me = await client.get_me()
-    print(f"LOGIN SEBAGAI: {me.username}")
+    print("✅ Bot Connected")
 
     if bot_data['is_active']:
         asyncio.create_task(broadcast_loop())
 
     await client.run_until_disconnected()
 
-if __name__ == '__main__':
-    try:
-        asyncio.run(main())
-    except Exception as e:
-        logging.critical(f"❌ Error utama: {e}")
+asyncio.run(main())
