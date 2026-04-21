@@ -20,7 +20,7 @@ if not API_ID or not API_HASH or not SESSION_STRING:
     raise RuntimeError("❌ ENV belum lengkap: API_ID / API_HASH / SESSION_STRING")
 
 # --- Client ---
-client = TelegramClient('userbot_broadcast_session', API_ID, API_HASH)
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # --- Data File ---
 DATA_FILE = 'bot_data.json'
@@ -39,7 +39,14 @@ def load_data():
         with open(DATA_FILE, 'r') as f:
             return json.load(f)
     except:
-        return {"caption": "", "groups": [], "is_active": False, "media_message_id": None, "buttons": [], "forward_link": None}
+        return {
+            "caption": "",
+            "groups": [],
+            "is_active": False,
+            "media_message_id": None,
+            "buttons": [],
+            "forward_link": None
+        }
 
 def save_data(data):
     with open(DATA_FILE, 'w') as f:
@@ -47,8 +54,9 @@ def save_data(data):
 
 bot_data = load_data()
 
-# --- Flask App (Uptime Ping) ---
+# --- Flask App ---
 app = Flask(__name__)
+
 @app.route('/')
 def index():
     return "✅ Bot aktif dan online!"
@@ -64,17 +72,20 @@ async def broadcast_loop():
         for group in bot_data['groups']:
             if not bot_data['is_active']:
                 break
+
             try:
                 if bot_data['caption']:
                     await client.send_message(group, bot_data['caption'])
                     await client.send_message("me", f"✅ Broadcast ke {group}")
             except Exception as e:
                 await client.send_message("me", f"❌ Gagal kirim ke {group}: {e}")
+
             await asyncio.sleep(180)
+
         if bot_data['is_active']:
             await asyncio.sleep(1800)
 
-# --- Commands ---
+# --- Commands (TIDAK DIUBAH LOGIC NYA) ---
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/on$'))
 async def start_broadcast(event):
     if not bot_data['is_active']:
@@ -94,6 +105,7 @@ async def stop_broadcast(event):
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup (@\w+)$'))
 async def add_group(event):
     group = event.pattern_match.group(1).lower()
+
     if group not in bot_data['groups']:
         bot_data['groups'].append(group)
         save_data(bot_data)
@@ -116,10 +128,16 @@ async def status(event):
 
 # --- Run Bot ---
 async def main():
-    await client.start()  # Gunakan session
+    await client.start()
     print("✅ Bot Connected.")
+
+    # DEBUG USER LOGIN
+    me = await client.get_me()
+    print(f"LOGIN SEBAGAI: {me.username}")
+
     if bot_data['is_active']:
         asyncio.create_task(broadcast_loop())
+
     await client.run_until_disconnected()
 
 if __name__ == '__main__':
