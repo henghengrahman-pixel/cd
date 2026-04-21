@@ -49,6 +49,9 @@ def save_data(data):
 
 bot_data = load_data()
 
+# 🔥 FIX ANTI DOUBLE LOOP
+broadcast_task = None
+
 # --- FLASK ---
 app = Flask(__name__)
 
@@ -63,6 +66,8 @@ threading.Thread(target=run_flask, daemon=True).start()
 
 # --- BROADCAST ---
 async def broadcast_loop():
+    global broadcast_task
+
     while bot_data['is_active']:
 
         for group in bot_data['groups']:
@@ -71,7 +76,6 @@ async def broadcast_loop():
                 break
 
             try:
-                # --- MEDIA + CAPTION ---
                 if bot_data['media_message_id']:
                     msg = await client.get_messages("me", ids=bot_data['media_message_id'])
 
@@ -86,7 +90,6 @@ async def broadcast_loop():
                     else:
                         await client.send_message("me", f"❌ Media tidak ditemukan")
 
-                # --- TEXT ONLY ---
                 elif bot_data['caption']:
                     await client.send_message(group, bot_data['caption'])
                     await client.send_message("me", f"✅ Text ke {group} sukses")
@@ -99,18 +102,27 @@ async def broadcast_loop():
         if bot_data['is_active']:
             await asyncio.sleep(1800)
 
+    # loop berhenti
+    broadcast_task = None
+
 # ================= COMMAND =================
 
 # ON
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/on$'))
 async def start(event):
-    if not bot_data['is_active']:
-        bot_data['is_active'] = True
-        save_data(bot_data)
-        await event.respond("✅ Broadcast ON")
-        asyncio.create_task(broadcast_loop())
-    else:
-        await event.respond("⚠️ Sudah ON")
+    global broadcast_task
+
+    if bot_data['is_active']:
+        return await event.respond("⚠️ Sudah ON")
+
+    bot_data['is_active'] = True
+    save_data(bot_data)
+
+    # 🔥 FIX: hanya buat 1 loop
+    if not broadcast_task or broadcast_task.done():
+        broadcast_task = asyncio.create_task(broadcast_loop())
+
+    await event.respond("✅ Broadcast ON")
 
 # OFF
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/off$'))
@@ -119,7 +131,7 @@ async def stop(event):
     save_data(bot_data)
     await event.respond("⛔ Broadcast OFF")
 
-# ADD GROUP MULTI (SUPER FIX)
+# ADD GROUP MULTI
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
 async def addgroup(event):
     lines = event.raw_text.split('\n')[1:]
@@ -153,7 +165,7 @@ async def status(event):
     status_text = "ON" if bot_data['is_active'] else "OFF"
     await event.respond(f"📡 Status: {status_text}\n📦 Total Grup: {len(bot_data['groups'])}")
 
-# SET MEDIA (REPLY WAJIB)
+# SET MEDIA
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setmedia$'))
 async def setmedia(event):
     if not event.is_reply:
@@ -165,12 +177,12 @@ async def setmedia(event):
         return await event.respond("❌ Ini bukan media")
 
     bot_data['media_message_id'] = msg.id
-    bot_data['caption'] = msg.message or ""   # 🔥 FIX PENTING
+    bot_data['caption'] = msg.message or ""
     save_data(bot_data)
 
     await event.respond("✅ Media + caption disimpan")
 
-# SET CAPTION MANUAL
+# SET CAPTION
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption'))
 async def setcaption(event):
     text = event.raw_text.replace("/setcaption", "").strip()
@@ -182,11 +194,15 @@ async def setcaption(event):
 
 # ================= RUN =================
 async def main():
+    global broadcast_task
+
     await client.start()
     logging.info("✅ Bot Connected")
 
+    # 🔥 FIX: hanya 1 loop saat start
     if bot_data['is_active']:
-        asyncio.create_task(broadcast_loop())
+        if not broadcast_task or broadcast_task.done():
+            broadcast_task = asyncio.create_task(broadcast_loop())
 
     await client.run_until_disconnected()
 
