@@ -17,7 +17,7 @@ logging.basicConfig(
 API_ID = 29931874
 API_HASH = '79a1562d9f9381a162a004fe17539afe'
 
-SESSION_FILE = "userbot_broadcast_session.session"
+SESSION_FILE = "1BVtsOKIBu8UvR8yRa4cDM6D2R2Rdz5cfE_vUpOzQi9JtWzODDpAOBhu_rkXUyfLr_333zWt8-K-jlAfohC7AI-ljhnYW8mEEJVuSHTAgkxkVt23TSLctm_ATwbmMXl1Blof9JbbZCpNPM5kXDEGouDZNirZyBp89xA3PtLMgZmofFRMuv0W66IubsRNRO9e4PmRwY7Ms-jGDWThdFp7B49GxndHpgdKUlbH6PWLzSrc7_KcNkUGa0_oiHjR2OnTGPCZEvqOUGrZJEsEF7RvXgIZFW8pCz4C13BjfmaUQntRvt4sFfFFh7BeltYr3bKwMFDwPsvgjG42JkJB2iH63v4x6oL7e4n8="
 
 if not os.path.exists(SESSION_FILE):
     raise RuntimeError("File session belum ada")
