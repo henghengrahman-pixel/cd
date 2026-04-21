@@ -88,6 +88,11 @@ def build_buttons():
         rows.append([Button.url(b['text'], b['url'])])
     return rows if rows else None
 
+def bold(text):
+    if not text:
+        return ""
+    return f"<b>{text}</b>"
+
 async def send_forward(group):
     try:
         link = bot_data['forward_link']
@@ -111,14 +116,26 @@ async def send_custom(group):
         if bot_data['media_message_id']:
             msg = await client.get_messages("me", ids=bot_data['media_message_id'])
             if msg:
+                caption = bot_data['caption'] or msg.message or ""
+                caption = bold(caption)
+
                 await client.send_file(
                     group,
                     msg.media,
-                    caption=bot_data['caption'] or msg.message or "",
-                    buttons=buttons
+                    caption=caption,
+                    buttons=buttons,
+                    parse_mode='html'
                 )
+
         elif bot_data['caption']:
-            await client.send_message(group, bot_data['caption'], buttons=buttons)
+            caption = bold(bot_data['caption'])
+
+            await client.send_message(
+                group,
+                caption,
+                buttons=buttons,
+                parse_mode='html'
+            )
 
         await client.send_message("me", f"✅ {group}")
 
@@ -181,7 +198,6 @@ async def status(event):
         f"Mode: {'FORWARD' if bot_data['forward_link'] else 'CUSTOM'}"
     )
 
-# MULTI ADD
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/addgroup'))
 async def addgroup(event):
     lines = event.raw_text.split('\n')[1:]
@@ -218,7 +234,6 @@ async def delgroup(event):
 async def listgroup(event):
     await event.respond("\n".join(bot_data['groups']) or "Kosong")
 
-# 🔥 FIX: CAPTION HARUS REPLY
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setcaption$'))
 async def setcaption(event):
     if not event.is_reply:
@@ -230,7 +245,7 @@ async def setcaption(event):
     bot_data['forward_link'] = None
 
     save_data(bot_data)
-    await event.respond("Caption OK (reply)")
+    await event.respond("Caption OK")
 
 @client.on(events.NewMessage(outgoing=True, pattern=r'^/setmedia$'))
 async def setmedia(event):
