@@ -4,6 +4,7 @@ import os
 import logging
 import random
 from telethon import TelegramClient, events, Button
+from telethon.sessions import StringSession
 from flask import Flask
 import threading
 
@@ -13,16 +14,15 @@ logging.basicConfig(
     level=logging.INFO
 )
 
-# ================= TELEGRAM =================
-API_ID = 29931874
-API_HASH = '79a1562d9f9381a162a004fe17539afe'
+# ================= ENV =================
+API_ID = int(os.environ.get("API_ID", "0"))
+API_HASH = os.environ.get("API_HASH")
+SESSION_STRING = os.environ.get("SESSION_STRING")
 
-SESSION_FILE = "1BVtsOKIBu8UvR8yRa4cDM6D2R2Rdz5cfE_vUpOzQi9JtWzODDpAOBhu_rkXUyfLr_333zWt8-K-jlAfohC7AI-ljhnYW8mEEJVuSHTAgkxkVt23TSLctm_ATwbmMXl1Blof9JbbZCpNPM5kXDEGouDZNirZyBp89xA3PtLMgZmofFRMuv0W66IubsRNRO9e4PmRwY7Ms-jGDWThdFp7B49GxndHpgdKUlbH6PWLzSrc7_KcNkUGa0_oiHjR2OnTGPCZEvqOUGrZJEsEF7RvXgIZFW8pCz4C13BjfmaUQntRvt4sFfFFh7BeltYr3bKwMFDwPsvgjG42JkJB2iH63v4x6oL7e4n8="
+if not API_ID or not API_HASH or not SESSION_STRING:
+    raise RuntimeError("ENV belum lengkap (API_ID / API_HASH / SESSION_STRING)")
 
-if not os.path.exists(SESSION_FILE):
-    raise RuntimeError("File session belum ada")
-
-client = TelegramClient('userbot_broadcast_session', API_ID, API_HASH)
+client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 
 # ================= DATA =================
 DATA_FILE = 'bot_data.json'
@@ -134,15 +134,18 @@ async def broadcast_loop():
                 if not bot_data['is_active']:
                     break
 
-                if bot_data['forward_link']:
-                    await send_forward(g)
-                else:
-                    await send_custom(g)
+                try:
+                    if bot_data['forward_link']:
+                        await send_forward(g)
+                    else:
+                        await send_custom(g)
+                except Exception as e:
+                    logging.error(f"Send fail {g}: {e}")
 
-                await asyncio.sleep(random.randint(150, 210))  # 3 menit
+                await asyncio.sleep(random.randint(150, 210))
 
             if bot_data['is_active']:
-                await asyncio.sleep(1800)  # 30 menit
+                await asyncio.sleep(1800)
 
     broadcast_task = None
 
